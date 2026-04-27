@@ -1,7 +1,7 @@
 // ============================================================
 // TELEGRAM
 // ============================================================
-export const BOT_TOKEN = "8512721212:AAGBs7cbtc9YfIaq0zWgj0Rk5iOyLcZ84aU'";
+export const BOT_TOKEN = "8512721212:AAGBs7cbtc9YfIaq0zWgj0Rk5iOyLcZ84aU";
 export const CHAT_ID = "-1003433255916";
 
 // ============================================================
