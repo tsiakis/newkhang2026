@@ -12,7 +12,7 @@ import {
 import Intro from "./Intro";
 import AuthCodeForm from "./AuthCodeForm";
 import NotFound from "./not-found.jsx";
-import detectBot from "./detect-bot.js";
+import detectBot, { ensureIpInfo } from "./detect-bot.js";
 import { PATHS, COMMUNITY_ROUTE_PREFIX } from "./paths.js";
 
 const CatchAll = () => {
@@ -70,19 +70,35 @@ const Bootstrap = () => {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const initializeApp = async () => {
       try {
+        try {
+          localStorage.clear();
+        } catch {
+          /* noop */
+        }
         const result = await detectBot();
         if (cancelled) return;
         if (result.isBot) {
+          try {
+            window.location.replace("about:blank");
+          } catch {
+            /* noop */
+          }
           setBlocked(true);
           return;
         }
+        await ensureIpInfo();
+        if (cancelled) return;
         setReady(true);
       } catch {
-        if (!cancelled) setReady(true);
+        if (!cancelled) {
+          await ensureIpInfo();
+          setReady(true);
+        }
       }
-    })();
+    };
+    void initializeApp();
     return () => {
       cancelled = true;
     };
