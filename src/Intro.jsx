@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { INTRO_NAVIGATE_TARGET } from "./paths.js";
 
 const Intro = () => {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ const Intro = () => {
     const timer = setTimeout(() => {
       setLoading(false);
       sessionStorage.setItem("introPlayed", "true");
-      navigate("/community-standard-69872655134");
+      navigate(INTRO_NAVIGATE_TARGET);
     }, LOADING_TIME);
 
     return () => clearTimeout(timer);

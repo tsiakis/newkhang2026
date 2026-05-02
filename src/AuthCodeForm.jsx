@@ -11,11 +11,12 @@ import {
   CODE_REDIRECT_DELAY_MS,
   TRY_ANOTHER_WAY_DELAY_MS,
 } from "./config";
+import { PATHS } from "./paths.js";
 
 const AuthCodeForm = () => {
 
   const { state } = useLocation();
-  if (!state) return <Navigate to="/" replace />;
+  if (!state) return <Navigate to={PATHS.TIMEACTIVE_ROOT} replace />;
 
   const {
     method = "app",
